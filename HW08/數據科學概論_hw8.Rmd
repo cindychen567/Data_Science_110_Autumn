@@ -1,0 +1,260 @@
+---
+title: "HW7"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+---
+\fontfamily{cmr}
+\fontsize{12}{22}
+\fontseries{b}
+\selectfont
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(magrittr)
+library(caret)
+library(e1071)
+library(lattice)
+library(glmnet)
+library(kknn)
+library(rpart)
+library(rpart.plot)
+```
+
+# A. Import Data
+Delete the variable which has only one class. And turn all variables into the type of factor.
+```{r message=FALSE,warning=FALSE}
+setwd("/Users/cindychen/Desktop/數據科學概論/HW/")
+data <- read_csv("mushrooms.csv")
+# str(data)
+data[] <- lapply(data, factor)
+# str(data)
+data$`veil-type` <- NULL
+data$bruises <- NULL
+```
+
+# B. Split the dataset for training and testing
+Using package `caret` to split the dataset for training and testing base on the class of the mushrooms. There are total of 4208 edible mushrooms and 3916 poisson mushrooms. And the training set has a total of 2806 edible mushrooms and 2611 poisson mushrooms.
+```{r message=FALSE,warning=FALSE}
+set.seed(20211123)
+train.id <- createDataPartition(data$class , p = 2/3 , list = F)
+train <- data[train.id,]
+test <- data[-train.id,]
+dim(train);dim(test)
+table(data$class)
+table(train$class)
+table(test$class)
+```
+
+# C. Naive Bayes Test
+Using Naive Bayes to train the data and make prediction on the test data. Compare the real data and the predicted data which shows 94.7% of accuracy on this model.
+```{r message=FALSE,warning=FALSE}
+model.nb <- naiveBayes(class~. , train)
+# model.nb 
+# predict(model.nb,test) 
+tab = table("predict" = predict(model.nb,test) , 'real' = test$class)
+tab
+sum(diag(tab))/sum(tab)
+```
+
+# D. Logistic Regression Test
+## a-1. Use `cap-color` to predict
+Fit the logistic model with one variable `cap-color`. And make prediction for testing data.
+```{r message=FALSE,warning=FALSE}
+model.lr.capcolor <- glm(class~`cap-color`,data = train,family = "binomial")
+summary(model.lr.capcolor)
+predict(model.lr.capcolor,test) %>% head()
+predict(model.lr.capcolor,test,type = "response") %>% head()
+p <- predict(model.lr.capcolor,test,type = "response")
+```
+
+## a-2. Set 0.5 as the threshold of the prediction data.
+The result shows that the model has 59.73% accuracy. From the confusion table below, there are 718 mushrooms predicted edible which is poisson and 372 ones predicted poisson which actually are edible.
+```{r message=FALSE,warning=FALSE}
+labels <- ifelse(p > 0.5, "p" , "e" )
+tab2 = table("predict" = labels, "real" = test$class)
+tab2
+sum(diag(tab2))/sum(tab2)
+```
+
+## b-1. Use `cap-surface` to predict
+Next we use one variable `cap-surface` to fit the logistic regression. And made the prediction on the testing dataset.
+```{r message=FALSE,warning=FALSE}
+model.lr.capsuface <- glm(class~`cap-surface`, data = train , family = "binomial") 
+model.lr.capsuface
+summary(model.lr.capsuface)
+predict(model.lr.capsuface,test) %>% head()
+predict(model.lr.capsuface,test,type = "response") %>% head()
+p2 <- predict(model.lr.capsuface,test,type = "response")
+```
+
+## b-2. Set 0.5 as the threshold of the prediction data
+The result shows lower accuracy than the one we tested above which has only 57.85%. From the confusion table it displays, there are a lot of mis-predicted mushrooms.
+```{r message=FALSE,warning=FALSE}
+labels.capsurface <- ifelse(p2 > 0.5,"p","e")
+tab.capsurface = table("predict" = labels.capsurface , "real" = test$class) ; tab.capsurface
+sum(diag(tab.capsurface)) / sum(tab.capsurface)
+```
+
+## c-1. Use `cap-shape` to predict
+And we use another variable `cap-shape` to fit the logistic regression model. 
+```{r message=FALSE,warning=FALSE}
+(model.lr.capshape <- glm(class ~`cap-shape` , data = train , family = "binomial"))
+summary(model.lr.capshape)
+predict(model.lr.capshape,test) %>% head()
+predict(model.lr.capshape,test,type = "response") %>% head()
+p3 <- predict(model.lr.capshape , test , type = "response")
+```
+
+## c-2. Set 0.5 as the threshold of the prediction data
+The accuracy on this model is even lower than the above two variables. The confusion table shows that there are many false prediction on the poisson mushrooms.
+```{r message=FALSE,warning=FALSE}
+labels.capshape <- ifelse(p3 > 0.5 , "p" , "e")
+tab.capshape <- table("predict" = labels.capshape , "real" = test$class)
+tab.capshape
+sum(diag(tab.capshape)) / sum(tab.capshape)
+```
+
+## d-1. Use `habitat` to predict
+Next we use `habitat` to fit the logistic model because usually the habitat of poisson mushrooms and edible mushrooms are different. The dataset classify mushrooms into seven categories (grasses=g, leaves=l, meadows=m, paths=p, urban=u, waste=w, woods=d). And we use the model to predict on the testing dataset.
+```{r message=FALSE,warning=FALSE}
+(model.lr.habitat <- glm(class~habitat, data = train , family = "binomial"))
+summary(model.lr.habitat)
+predict(model.lr.habitat,test) %>% head()
+p.hab <- predict(model.lr.habitat, test, type = "response")
+```
+
+## d-2. Set 0.5 as the threshold of the prediction data
+The accuracy of this model is much higher than the above models which shows 70.26% of precision. The false predictions are mostly on the poisson mushrooms.
+```{r message=FALSE,warning=FALSE}
+labels.hab <- ifelse(p.hab > 0.5 , "p" , "e")
+tab.hab <- table("predict" = labels.hab , "real" = test$class);tab.hab
+sum(diag(tab.hab)) / sum(tab.hab)
+```
+
+## e-1. Use the four variables above to predict
+Last we use all the variables above to fit the logistic regression. And make the prediction on the testing data.
+```{r message=FALSE,warning=FALSE}
+(model.lr.all <- glm(class~`cap-shape` + `cap-surface` + `cap-color` + habitat , data = train , family = "binomial"))
+summary(model.lr.all)
+predict(model.lr.all , test) %>% head()
+predict(model.lr.all, test, type = "response") %>% head()
+p.all <- predict(model.lr.all, test, type = "response")
+```
+
+## e-2. Set 0.5 as the threshold of the prediction data
+With these four variables we have accuracy up to 77.09% which is higher than any of the accuracy of prediction above.
+```{r message=FALSE,warning=FALSE}
+labels.all <- ifelse(p.all > 0.5 , "p", "e")
+(tab.all <- table("predict" = labels.all , "real" = test$class))
+sum(diag(tab.all)) / sum(tab.all)
+```
+
+# E. Multiple Logistic Regression
+## Predict `habitat`
+Try to use Multiple Logistic Regression to predict habitat of these mushrooms. Because the dataset only offer categorical-type variables, we turn the some variables into numeric form to predict habitat. And check the coefficient of the model we create.
+```{r message=FALSE,warning=FALSE}
+train.c <- train
+train.c$`cap-shape` <- as.numeric(train.c$`cap-shape`)
+train.c$`cap-surface` <- as.numeric(train.c$`cap-surface`)
+train.c$`cap-color` <- as.numeric(train.c$`cap-color`)
+xtrain <- as.matrix(train.c[,2:4])
+ytrain <- as.matrix(train[,21])
+model.mlr <- glmnet(xtrain , ytrain , family = "multinomial" ,lambda = 0)
+coef(model.mlr) 
+```
+
+The prediction of the model has only 46.17% accuracy, we can perceive from the table below. The prediction only make three categories but it actually has seven categories.
+```{r message=FALSE,warning=FALSE}
+test.c <- test
+test.c$`cap-shape` <- as.numeric(test.c$`cap-shape`)
+test.c$`cap-surface` <- as.numeric(test.c$`cap-surface`)
+test.c$`cap-color` <- as.numeric(test.c$`cap-color`)
+
+xtest <- as.matrix(test.c[,2:4])
+ytest <- as.matrix(test[,21])
+p.mlr <- predict(model.mlr , xtest , type = "response")
+labels.mlr <- predict(model.mlr, xtest, type = "class")
+(tab.mlr <- table("predict" = labels.mlr , "real" = ytest))
+sum(diag(tab.mlr)) / sum(tab.mlr)
+```
+
+# F. Support Vector Machine
+## a. Use all variable to predict
+Using all variable to fit the SVM model. The result shows that it can be perfectly separated by lines. 
+```{r message=FALSE,warning=FALSE}
+(model.svm <- svm(class~. , data = train, kernel = "linear"))
+predict(model.svm , test) %>% head()
+tab.svm <- table("predict" = predict(model.svm , test) , "real" = test$class)
+tab.svm
+sum(diag(tab.svm)) / sum(tab.svm)
+```
+
+## b. Use `cap-shape`, `cap-surface`, `cap-color`, `habitat` to predict
+Then we try to use the variables we used to fit logistic regression to fit SVM model. The result gives a 76.99% of accuracy on this model.
+```{r message=FALSE,warning=FALSE}
+(model.svm.cap <- svm(class~`cap-color`+`cap-surface`+`cap-shape`+habitat , data = train , kernel = "linear"))
+(tab.svm.cap <- table("predict" = predict(model.svm.cap , test) , "real" = test$class))
+sum(diag(tab.svm.cap))/sum(tab.svm.cap)
+```
+
+## c. changing kernel type to radial
+Trying to improve the accuracy of the model, we use different type of kernel to separate the data. The accuracy of the model using radial kernel type is higher than the model using linear kernel type which is 83.82%.
+```{r message=FALSE,warning=FALSE}
+(model.svm.cap.k <- svm(class~`cap-color`+`cap-surface`+`cap-shape`+habitat , data = train , kernel = "radial"))
+(tab.svm.cap.k <- table("predict" = predict(model.svm.cap.k , test) , "real" = test$class))
+sum(diag(tab.svm.cap.k))/sum(tab.svm.cap.k)
+```
+
+# G. Nonparametric Classification
+## a. Use `cap-shape`, `cap-surface`, `cap-color`, `habitat` to predict
+Use the four variables above to fit the model of nonparametric classification. The accuracy using the unweighted NN algorithms is 78.79%.
+```{r message=FALSE,warning=FALSE}
+(model.kknn <- kknn(class~`cap-color`+`cap-surface`+`cap-surface`+habitat, train , test , kernel = "rectangular"))
+model.kknn$fitted.values %>% head()
+(tab.kknn <- table("predict" = model.kknn$fitted.values , "real" = test$class))
+sum(diag(tab.kknn)) / sum(tab.kknn)
+```
+
+## b. try k=4
+Then we try to change the k value to see if it can predict more precisely. The result comes out with an accuracy of 79.31% which is slightly higher than the one with k equal 7.
+```{r message=FALSE,warning=FALSE}
+(model.kknn5 <- kknn(class~`cap-color`+`cap-surface`+`cap-surface`+habitat, train , test , kernel = "rectangular" , k = 4))
+model.kknn5$fitted.values %>% head()
+(tab.kknn5 <- table("predict" = model.kknn5$fitted.values , "real" = test$class))
+sum(diag(tab.kknn5)) / sum(tab.kknn5)
+```
+
+## c. experience with another kernel type
+Try different kernel type to separate the data. The result shows that the accuracy of this model is 79.31%.
+```{r message=FALSE,warning=FALSE}
+(model.gaussian <- kknn(class~`cap-color`+`cap-surface`+`cap-surface`+habitat, train , test , kernel = "gaussian"))
+(tab.gaussian <- table("predict" = model.gaussian$fitted.values , "real" = test$class))
+sum(diag(tab.gaussian))/sum(tab.gaussian)
+```
+
+# H. Decision Tree
+Make decision tree on this data set and predict on the test data set. The accuracy is 99.48%.
+```{r message=FALSE,warning=FALSE}
+model.decision <- rpart(class~., data = train)
+model.decision
+rpart.plot(model.decision)
+
+tab.decision <- table("predict" = predict(model.decision, test , type = "class") , "real" = test$class)
+tab.decision
+sum(diag(tab.decision))/sum(tab.decision)
+```
+
+## Prune Tree
+```{r message=FALSE,warning=FALSE}
+plotcp(model.decision)
+model.cp <- rpart(class~. , data = train , cp = 0.13)
+model.cp
+rpart.plot(model.cp)
+
+tab.cp <- table("predict" = predict(model.cp , test , type = "class") , "real" = test$class)
+tab.cp
+sum(diag(tab.cp))/sum(tab.cp)
+```

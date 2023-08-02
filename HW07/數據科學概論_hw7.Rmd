@@ -1,0 +1,384 @@
+---
+header-includes:
+  \usepackage{xeCJK}
+  \usepackage{fontspec}
+  \setCJKmainfont{標楷體}
+  \XeTeXlinebreaklocale "zh"
+  \XeTeXlinebreakskip = 0pt plus 1pt
+  
+title: "HW6"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(ggplot2)
+library(ggthemes)
+library(magrittr)
+library(car)
+library(np)
+library(dplyr)
+library(rpart)
+library(rpart.plot)
+```
+
+# （一）匯入資料
+```{r warning = F, message= F}
+## read my flie
+setwd("/Users/cindychen/Desktop/數據科學概論/HW/")
+data <- read_csv("insurance.csv")
+str(data)
+```
+
+# (二）從資料中隨機取樣
+```{r warning = F, message= F}
+## sample from the data
+set.seed(122)
+taken <- sample(1:nrow(data),500)
+test1 <- data[taken,]
+```
+
+# （三）利用取樣過後的資料做分析
+## 單變量迴歸分析
+1.\newline
+將歲數與費用的變數做單變量的回歸。並將回歸分兩次跑，分別為沒有$\beta_0$與有$\beta_0$，從summary可以看出，在有截距項的回歸中（model1），$\beta_0$並不顯著，且再去除掉截距項後的回歸模型r-square 與調整後r-square都大幅提升，所以取除掉$\beta_0$的模型較適合此回歸。
+```{r warning = F, message= F}
+## make regression of age and charges
+model1 <- lm(charges~age,test1)
+model1_without <- lm(charges~age -1 , test1)
+summary(model1)
+summary(model1_without)
+```
+
+將圖形畫出來後可以更明顯的看出，紅色線條為有$\beta_0$的模型，藍色線段為沒有$\beta_0$的模型，第二條線較適合這模型的點的分佈，雖然有些點的位置較高，推測可能是有不同變數影響，所以才會造成分佈有些許的不同的狀況。
+```{r warning = F, message= F}
+plot(test1$age,test1$charges)
+abline(model1 ,lty = 1 ,col = "red")
+abline(model1_without,lty = 2, col = "blue")
+```
+2.\newline
+將bmi值與費用做回歸分析。同樣將回歸分兩次跑，分別是有$\beta_0$的模型與去除掉$\beta_0$的模型，將兩個模型的數據比較，可以發現有$\beta_0$的模型的截距項較不具顯著性，且上一個的狀況一樣，有$\beta_0$的模型的r-square與調整後r-square都呈現較低的結果，所以可以從此推斷取除掉$\beta_0$的模型較適合這個回歸。
+```{r warning = F, message= F}
+## make regression of bmi and charges
+model2 <- lm(charges~bmi, test1)
+model2_without <- lm(charges~bmi-1, test1)
+summary(model2)
+summary(model2_without)
+```
+
+從圖形來判斷，紅色線條為有$\beta_0$的模型，藍色線條為去除掉$\beta_0$的模型，可以看出兩著的線條有些許的差異，但因為點的分佈較不明確，所以很難利用圖形推斷哪一個模型較為適切。利用圖形的散佈情況，我們可以發現他呈現兩種不同的分佈，有些點都較貼平水平線，有些則會呈現上升的趨勢。
+```{r warning = F, message= F}
+plot(test1$bmi , test1$charges)
+abline(model2 ,lty = 1 ,col = "red")
+abline(model2_without,lty = 2, col = "blue")
+```
+
+因次，我們可以將其他因素帶入並觀察圖形的狀況與點的散佈狀況。\newline
+首先，先將有沒有抽菸這個變因帶入，可以發現，點的散佈情況會跟有沒有抽菸有所關聯，有抽菸的民眾保險收費會隨著bmi的增加而跟著增加，而沒抽菸的民眾，bmi的高低對保險費用的收取較無影響。
+```{r warning = F, message= F}
+ggplot(test1 , aes(x = bmi, y = charges ))+
+  geom_point(aes(colour = smoker))+
+  scale_color_brewer(palette = "Set2")
+```
+再利用性別當作變因進去看是否有關聯，從點的散佈情況可以看出，其較不受性別因素影響。
+```{r warning = F, message= F}
+ggplot(test1 , aes(x = bmi, y = charges ))+
+  geom_point(aes(colour = sex))+
+  scale_color_brewer(palette = "Set2")
+```
+利用有沒有抽菸這個變數將data分割成兩半。
+```{r warning = F, message= F}
+## and split the dataset by variable smoker
+NS <- split(data,data$smoker)
+```
+
+將bmi與費用的回歸再跑一次，分為有$\beta_0$與沒有$\beta_0$的模型，並將預測的model放入圖形中檢視，在沒有抽菸的data中，沒有$\beta_0$的模型r-square 與調整後r-square都較高，與上面的回歸不同的是，這次有$\beta_0$的模型截距項的顯著性較上面為高，且r-square也較上面模型跑出來的結果為高。
+```{r warning = F, message= F}
+## run the regression line on two different dataset above
+## With nonsmoker
+model3_1 <- lm(charges~bmi,NS$no)
+model3_1W <- lm(charges~bmi-1,NS$no)
+summary(model3_1)
+summary(model3_1W)
+```
+
+將預測後的模型帶入圖形中，可以發現兩者的差異。
+```{r warning = F, message= F}
+predicted_bmi <- data.frame(charges = predict(model3_1,NS$no),
+                            bmi = NS$no$bmi)
+predicted_bmiw <- data.frame(charges = predict(model3_1W,NS$no),
+                             bmi = NS$no$bmi)
+
+ggplot(NS$no,aes(x = bmi,y = charges))+
+  geom_point(col = "pink")+
+  geom_line(data = predicted_bmi , aes(x = bmi, y = charges,color = "regression") , lty = 2)+
+  geom_line(data = predicted_bmiw , aes(x = bmi, y = charges ,color = "regression without B0" ), lty = 2)+
+  scale_colour_manual("", breaks = c("regression","regression without B0"),
+                     values = c("blue","purple"))
+
+##residuals(model3_1)
+##residuals(model3_1W)
+```
+
+換成有抽菸的資料跑兩種回歸，在有$\beta_0$與沒有$\beta_0$的模型下，變數都具有顯著性，但是在去除掉截距項的模型，其r-square與調整後r-square較高。
+```{r warning = F, message= F}
+## with smoker
+model3_2 <- lm(charges~bmi,NS$yes)
+model3_2W <- lm(charges~bmi-1,NS$yes)
+summary(model3_2)
+summary(model3_2W)
+```
+將兩者的預測放入圖形中，可以發現兩者的差異。
+```{r warning = F, message= F}
+predicted_2bmi <- data.frame(charges = predict(model3_2,NS$yes),
+                            bmi = NS$yes$bmi)
+predicted_2bmiw <- data.frame(charges = predict(model3_2W,NS$yes),
+                             bmi = NS$yes$bmi)
+
+ggplot(NS$yes,aes(x = bmi,y = charges))+
+  geom_point(col = "pink")+
+  geom_line(data = predicted_2bmi , aes(x = bmi, y = charges,color = "regression") , lty = 2)+
+  geom_line(data = predicted_2bmiw , aes(x = bmi, y = charges,color = "regression without B0" ), lty = 2)
+  scale_colour_manual("", breaks = c("regression","regression without B0"),
+                      values = c("blue","purple"))
+
+## residuals(model3_2)
+## residuals(model3_2W)
+```
+
+## Kolmogorov-Smirnov test
+利用Kolmogorov-Smirnov test檢查residuals的分佈是不是呈現常態分佈，從test中可以看出p-value小於0，所以我們可以拒絕H0的假設，也就是residuals不呈常態分佈。\newline
+利用plot後的圖判斷，可以從residuals vs fitted圖看出，點的散佈呈現一種莫名其妙的圖形，且他的標準化後residuals有到10000多，所以可以知道他可能不呈常態分佈。
+```{r warning = F, message= F,fig.height =4}
+## check the residual of model3_2 is normal distribution with mean 0 and variance 1
+ks.test(residuals(model3_2),"pnorm")
+par(mfrow = c(2,2))
+plot(model3_2)
+```
+將bmi值取平方與三次方並放入回歸中觀察，可以發現，將平方項與三次方項放入後，r-square與調整後r-square都提高了，且兩個變數都具有顯著性。
+```{r warning = F, message= F}
+## run the regression of bmi and charges with square bmi and cube bmi
+b2 <- NS$yes$bmi^2
+model3_3 <- lm(charges~bmi+b2,NS$yes)
+b3 <- NS$yes$bmi^3
+model3_4 <- lm(charges~bmi+b2+b3,NS$yes)
+summary(model3_3)
+summary(model3_4)
+```
+將預測的模型放入圖形中觀察。
+```{r warning = F, message= F}
+predict_3bmi <- data.frame(charges = predict(model3_3,NS$yes),
+                           bmi = NS$yes$bmi)
+predict_4bmi <- data.frame(charges = predict(model3_4,NS$yes),
+                           bmi = NS$yes$bmi)
+
+ggplot(NS$yes,aes(x = bmi , y = charges))+
+  geom_point(col = "darkgrey")+
+  geom_line(data = predict_3bmi,aes(x = bmi,y = charges,col = "regression with square bmi"))+
+  geom_line(data = predict_4bmi,aes(x = bmi,y = charges,col = "regression with cube bmi"),lty =2)+
+  geom_line(data = predicted_2bmi , aes(x = bmi, y = charges,color = "regression") , lty = 2)+
+  scale_color_manual("",breaks = c("regression with square bmi","regression with cube bmi","regression"),
+                     values = c("#FC9F66","#FAC357","#97C5D8"))+
+  theme_clean()
+```
+分別觀察四個模型SSE，可以發現有加入立方項的回歸模型，其SSE值為最低。
+```{r warning = F, message= F}
+## see the regression line which is more fit
+list("Sum of square error with intercept" = sum(residuals(model3_2)^2),
+     "Sum of square error without intercept" = sum(residuals(model3_2W)^2),
+     "Sum of square error with quadratic" = sum(residuals(model3_3)^2),
+     "Sum of square error with cube" = sum(residuals(model3_4)^2))
+```
+
+```{r warning = F, message= F}
+## change the variable of smoker into 0 and 1 (nonsmoker and smoker) 
+datacopy <- data
+datacopy$Idsmoker <- ifelse(data$smoker == "yes" ,1, 0)
+datacopy <- datacopy[,c(1,2,3,4,8,6,7)]
+```
+
+接著觀察小孩與費用的回歸模型，在沒有$\beta_0$的模型下，小孩變數的顯著性較高，且r-square與調整後r-square較高ㄡ
+```{r warning = F, message= F}
+## make regression of charges with children
+model4 <- lm(charges~children,datacopy)
+model4w <- lm(charges~children-1,datacopy)
+summary(model4)
+summary(model4w)
+```
+
+將預測的模型放入圖形中觀察。
+```{r warning = F, message= F}
+predict_1ch <- data.frame(charges = predict(model4,datacopy),
+                          children = datacopy$children)
+
+predict_1chw <- data.frame(charges = predict(model4w,datacopy),
+                           children = datacopy$children)
+
+ggplot(datacopy,aes(x=children,y = charges))+
+  geom_jitter(alpha = 0.5,col = "lightblue")+
+  geom_line(data = predict_1ch,aes(x = children , y = charges),col = "blue")+
+  geom_line(data = predict_1chw,aes(x = children , y = charges),col = "#8B47B5")
+```
+
+接著利用children數當作分類標準，觀察在不同小孩數下的平均值，可以發現平均呈現一種鐘型的分佈，在小孩數為2或3時收取的費用會最高。
+```{r warning = F, message= F}
+by(datacopy$charges,datacopy$children,mean)
+```
+觀察地區與費用的回歸。
+```{r warning = F, message= F}
+## make regression of charges with region
+model5 <- lm(charges~region,datacopy)
+summary(model5)
+## model.matrix(model5)
+```
+
+利用地區為分類標準，觀察費用各地區費用收取的平均。
+```{r warning = F, message= F}
+by(datacopy$charges,datacopy$region,mean)
+```
+
+## 多變量回歸
+利用多變量回歸觀察，可以發現某些變數不具有顯著性，所以將它排除並在觀察一次。
+```{r warning = F, message= F}
+## multiple regression
+full_model <- lm(charges~. , datacopy)
+summary(full_model)
+```
+
+去除掉性別這項變數後在觀察一次多變量回歸的模型，可以發現調整後r-square稍微的提高了，但兩個模型的變化並不大。
+```{r warning = F, message= F}
+## the variable of sex is not significant in the last model
+## so we exclude it and see the regression again
+model_wsex <- lm(charges~.-sex , datacopy)
+summary(model_wsex)
+
+## predict(model_wsex)
+```
+
+## Log-linear Regression
+將charges變數取log值，並帶入上面的模型觀察，利用這個模型有兩個變數的顯著性提高了，r-square與調整後r-square也提高了。
+```{r warning = F, message= F}
+## using log-linear regression
+log_model <- lm(log(charges)~.-sex , datacopy)
+summary(log_model)
+```
+
+##  Locally Weighted Regression
+利用Locally Weighted Regression製作費用與bmi的回歸模型，並將其與log-linear的回歸模型比較。
+```{r warning = F, message= F}
+## loess regression
+lossreg <- loess(charges ~ bmi, NS$yes)
+logreg <- lm(charges~ log(bmi),NS$yes)
+
+ggplot(NS$yes,aes(x = bmi , y = charges))+
+  geom_point(col = "pink")+
+  geom_line(data = data.frame(charges = predict(lossreg , NS$yes) , bmi = NS$yes$bmi),
+            aes(x = bmi , y = charges, colour = "Locally weighted regression" ))+
+  geom_line(data = data.frame(charges = predict(logreg , NS$yes), bmi = NS$yes$bmi),
+            aes(x = bmi , y = charges, colour = "Log-linear regression"))+
+  scale_color_manual("",breaks = c("Locally weighted regression","Log-linear regression"),
+                     values = c("red","#7E1037"))+
+  theme(legend.position = "bottom")
+```
+利用Locally Weighted Regression製作費用與age的回歸模型，並將其與log-linear的回歸模型比較。
+```{r warning = F, message= F}
+lossreg_l <- loess(charges ~ age,NS$yes )
+logreg_l <- lm(charges ~ log(age) , NS$yes)
+
+ggplot(NS$yes, aes(x = age , y = charges))+
+  geom_point(col = "#88CDF6")+
+  geom_line(data = data.frame(charges = predict(lossreg_l,NS$yes), age = NS$yes$age),
+            aes(x = age, y = charges , colour = "Locally weighted regression"))+
+  geom_line(data = data.frame(charges = predict(logreg_l,NS$yes), age = NS$yes$age),
+            aes(x = age , y = charges , colour = "Log-linear regression"))+
+  scale_color_manual("" , breaks = c("Locally weighted regression","Log-linear regression"),
+                     values = c("#73CD88","#23503A"))+
+  theme(legend.position = "bottom")
+```
+
+## Kernel Regression
+我利用kernel Regression跑出來的圖形可能較不適合這個模型。
+```{r warning = F, message= F}
+## kernel regression
+model.np <- npreg(charges ~ bmi , ckertype = "gaussian" , ckerorder = 2 , data = NS$yes)
+model.np
+
+series <- seq(10,20)
+fit <- predict(model.np , series)
+
+plot(NS$yes$charges[order(NS$yes$bmi)],fit$fit[order(NS$yes$bmi)],col = "blue", type = "l",
+     xlab = "BMI" , ylab = "Charges")
+```
+
+## Decision Tree
+製作決策樹利用bmi值。
+```{r warning = F, message= F}
+## regression tree
+regTree <- rpart(charges ~ bmi,data = NS$yes)
+regTree
+
+## plot(regTree,uniform = T)
+## text(regTree,digits = 6)
+
+rpart.plot(regTree ,digits = 3, type = 2 , roundint = F)
+```
+製作決策樹利用age值。
+```{r warning = F, message= F}
+regTree_1 <- rpart(charges ~ age,data = NS$yes)
+regTree_1
+
+## plot(regTree_1,uniform = T)
+## text(regTree_1,digits = 6)
+
+rpart.plot(regTree_1, digits = 3) 
+```
+利用cp值去調整決策樹的長度與大小。
+```{r fig.height = 4}
+## regression tree - prune tree
+plotcp(regTree)
+regTree_prune <- prune(regTree , cp =0.11)
+## plot(regTree_prune,uniform = T)
+## text(regTree_prune,digits =6)
+
+rpart.plot(regTree_prune, digits = 3) 
+```
+
+```{r fig.height = 4}
+plotcp(regTree_1)
+regTree_prune1 <- prune(regTree_1 , cp =0.05)
+## plot(regTree_prune1,uniform = T)
+## text(regTree_prune1,digits =6)
+
+rpart.plot(regTree_prune1, digits = 3) 
+```
+
+比較取用較適cp 值後的決策樹，在散佈圖中的呈現。
+```{r fig.height = 4}
+## compare before and after pruning tree
+NS$yes %>% 
+  mutate(pred = predict(regTree,NS$yes)) %>%
+  mutate(pred2 = predict(regTree_prune,NS$yes)) %>%
+  ggplot(aes(x = bmi , y = charges))+
+  geom_point(col = "#53A7D8")+
+  geom_line(aes(y = pred , colour = "decision tree"))+
+  geom_line(aes(y = pred2 , colour = "pruned decision tree"))+
+  scale_color_manual("",breaks = c("decision tree", "pruned decision tree"),
+                     values = c("#A5678E","#33539E"))+
+  theme_clean()+
+  theme(legend.position = "bottom")
+
+NS$yes %>% 
+  mutate(pred = predict(regTree_1,NS$yes)) %>%
+  mutate(pred2 = predict(regTree_prune1,NS$yes)) %>%
+  ggplot(aes(x = age , y = charges))+
+  geom_point(col = "#FFDD94")+
+  geom_line(aes(y = pred , colour = "decision tree"))+
+  geom_line(aes(y = pred2 , colour = "pruned decision tree"))+
+  scale_color_manual("",breaks = c("decision tree", "pruned decision tree"),
+                     values = c("#FA897B","#CCABDB"))+
+  theme_clean()+
+  theme(legend.position = "bottom")
+```

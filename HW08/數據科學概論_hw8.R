@@ -1,0 +1,178 @@
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(magrittr)
+library(caret)
+library(e1071)
+library(lattice)
+library(glmnet)
+library(kknn)
+library(rpart)
+library(rpart.plot)
+
+## reading data
+setwd("/Users/cindychen/Desktop/數據科學概論/HW/")
+data <- read_csv("mushrooms.csv")
+str(data)
+data[] <- lapply(data, factor)
+str(data)
+data$`veil-type` <- NULL
+data$bruises <- NULL
+
+## put data into training set and testing set
+set.seed(20211123)
+train.id <- createDataPartition(data$class , p = 2/3 , list = F)
+train <- data[train.id,]
+test <- data[-train.id,]
+dim(train);dim(test)
+table(data$class)
+table(train$class)
+table(test$class)
+
+## Naive Bayes test on the training dataset
+model.nb <- naiveBayes(class~. , train)
+model.nb
+predict(model.nb,test)
+tab = table("predict" = predict(model.nb,test) , 'real' = test$class)
+tab
+sum(diag(tab))/sum(tab)
+
+## Logistic Regression
+### Use cap-color to predict
+model.lr.capcolor <- glm(class~`cap-color`,data = train,family = "binomial")
+model.lr.capcolor
+summary(model.lr.capcolor)
+predict(model.lr.capcolor,test)
+predict(model.lr.capcolor,test,type = "response")
+p <- predict(model.lr.capcolor,test,type = "response")
+
+###set 0.5 as threshold
+labels <- ifelse(p > 0.5, "p" , "e" )
+labels
+tab2 = table("predict" = labels, "real" = test$class)
+tab2
+sum(diag(tab2))/sum(tab2)
+
+### Use cap-surface to predict
+model.lr.capsuface <- glm(class~`cap-surface`, data = train , family = "binomial") ; model.lr.capsuface
+summary(model.lr.capsuface)
+predict(model.lr.capsuface,test)
+predict(model.lr.capsuface,test,type = "response")
+p2 <- predict(model.lr.capsuface,test,type = "response")
+
+### set 0.5 as threshold
+labels.capsurface <- ifelse(p2 > 0.5,"p","e") ; labels.capsurface
+tab.capsurface = table("predict" = labels.capsurface , "real" = test$class) ; tab.capsurface
+sum(diag(tab.capsurface)) / sum(tab.capsurface)
+
+### Use cap-shape to predict
+(model.lr.capshape <- glm(class ~`cap-shape` , data = train , family = "binomial"))
+summary(model.lr.capshape)
+predict(model.lr.capshape,test)
+predict(model.lr.capshape,test,type = "response")
+(p3 <- predict(model.lr.capshape , test , type = "response"))
+
+### set 0.5 as threshold
+labels.capshape <- ifelse(p3 > 0.5 , "p" , "e");labels.capshape
+tab.capshape <- table("predict" = labels.capshape , "real" = test$class);tab.capshape
+sum(diag(tab.capshape)) / sum(tab.capshape)
+
+### Use habitat to predict
+(model.lr.habitat <- glm(class~habitat, data = train , family = "binomial"))
+summary(model.lr.habitat)
+predict(model.lr.habitat,test)
+p.hab <- predict(model.lr.habitat, test, type = "response")
+
+## set 0.5 as the threshold
+labels.hab <- ifelse(p.hab > 0.5 , "p" , "e");labels.hab
+tab.hab <- table("predict" = labels.hab , "real" = test$class);tab.hab
+sum(diag(tab.hab)) / sum(tab.hab)
+
+### Use above four variables to predict
+(model.lr.all <- glm(class~`cap-shape` + `cap-surface` + `cap-color` + habitat , data = train , family = "binomial"))
+summary(model.lr.all)
+predict(model.lr.all , test)
+predict(model.lr.all, test, type = "response")
+p.all <- predict(model.lr.all, test, type = "response")
+
+### set 0.5 as threshold
+(labels.all <- ifelse(p.all > 0.5 , "p", "e"))
+(tab.all <- table("predict" = labels.all , "real" = test$class))
+sum(diag(tab.all)) / sum(tab.all)
+
+## Use multiple logistic regression to predict
+### predict habitat
+train.c <- train
+train.c$`cap-shape` <- as.numeric(train.c$`cap-shape`)
+train.c$`cap-surface` <- as.numeric(train.c$`cap-surface`)
+train.c$`cap-color` <- as.numeric(train.c$`cap-color`)
+xtrain <- as.matrix(train.c[,2:4])
+ytrain <- as.matrix(train[,21])
+model.mlr <- glmnet(xtrain , ytrain , family = "multinomial" ,lambda = 0)
+coef(model.mlr) 
+
+test.c <- test
+test.c$`cap-shape` <- as.numeric(test.c$`cap-shape`)
+test.c$`cap-surface` <- as.numeric(test.c$`cap-surface`)
+test.c$`cap-color` <- as.numeric(test.c$`cap-color`)
+
+xtest <- as.matrix(test.c[,2:4])
+ytest <- as.matrix(test[,21])
+p.mlr <- predict(model.mlr , xtest , type = "response")
+labels.mlr <- predict(model.mlr, xtest, type = "class")
+(tab.mlr <- table("predict" = labels.mlr , "real" = ytest))
+sum(diag(tab.mlr)) / sum(tab.mlr)
+
+### Support Vector Machine
+## use all variable to predict
+(model.svm <- svm(class~. , data = train, kernel = "linear"))
+predict(model.svm , test)
+tab.svm <- table("predict" = predict(model.svm , test) , "real" = test$class)
+tab.svm
+sum(diag(tab.svm)) / sum(tab.svm)
+
+## use above four variables to predict 
+(model.svm.cap <- svm(class~`cap-color`+`cap-surface`+`cap-shape`+habitat , data = train , kernel = "linear"))
+(tab.svm.cap <- table("predict" = predict(model.svm.cap , test) , "real" = test$class))
+sum(diag(tab.svm.cap))/sum(tab.svm.cap)
+
+## changing kernel type
+(model.svm.cap.k <- svm(class~`cap-color`+`cap-surface`+`cap-shape`+habitat , data = train , kernel = "radial"))
+(tab.svm.cap.k <- table("predict" = predict(model.svm.cap.k , test) , "real" = test$class))
+sum(diag(tab.svm.cap.k))/sum(tab.svm.cap.k)
+
+### Nonparametric ClassificationModels
+(model.kknn <- kknn(class~`cap-color`+`cap-surface`+`cap-surface`+habitat, train , test , kernel = "rectangular"))
+model.kknn$fitted.values
+(tab.kknn <- table("predict" = model.kknn$fitted.values , "real" = test$class))
+sum(diag(tab.kknn)) / sum(tab.kknn)
+
+## try k = 4
+(model.kknn5 <- kknn(class~`cap-color`+`cap-surface`+`cap-surface`+habitat, train , test , kernel = "rectangular" , k = 4))
+model.kknn5$fitted.values
+(tab.kknn5 <- table("predict" = model.kknn5$fitted.values , "real" = test$class))
+sum(diag(tab.kknn5)) / sum(tab.kknn5)
+
+## experience with other kernel
+(model.gaussian <- kknn(class~`cap-color`+`cap-surface`+`cap-surface`+habitat, train , test , kernel = "gaussian"))
+(tab.gaussian <- table("predict" = model.gaussian$fitted.values , "real" = test$class))
+sum(diag(tab.gaussian))/sum(tab.gaussian)
+
+### Decision Tree
+model.decision <- rpart(class~., data = train)
+model.decision
+rpart.plot(model.decision)
+
+tab.decision <- table("predict" = predict(model.decision, test , type = "class") , "real" = test$class)
+tab.decision
+sum(diag(tab.decision))/sum(tab.decision)
+
+## checking cp value
+plotcp(model.decision)
+model.cp <- rpart(class~. , data = train , cp = 0.014)
+model.cp
+rpart.plot(model.cp)
+
+tab.cp <- table("predict" = predict(model.cp , test , type = "class") , "real" = test$class)
+tab.cp
+sum(diag(tab.cp))/sum(tab.cp)
